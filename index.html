@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Quiet Hours — A City to Wander</title>
+<link rel="stylesheet" href="./style.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/three.module.js",
+    "three/addons/": "./vendor/three/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="loading">
+  <div class="loading-inner">
+    <div class="title">Quiet Hours</div>
+    <div class="sub">a city to wander</div>
+    <div class="bar"><div class="fill" id="loadfill"></div></div>
+    <div class="status" id="loadstatus">building the world…</div>
+  </div>
+</div>
+
+<div id="start" class="overlay hidden">
+  <div class="card">
+    <h1>Quiet Hours</h1>
+    <p class="lede">Wander a city at golden hour. Crouch low and crawl through open windows to explore the homes inside.</p>
+    <ul class="controls">
+      <li><b>W&nbsp;A&nbsp;S&nbsp;D</b> — move</li>
+      <li><b>Mouse</b> — look</li>
+      <li><b>Shift</b> — sprint</li>
+      <li><b>Space</b> — jump</li>
+      <li><b>C</b> or <b>Ctrl</b> — crouch / crawl</li>
+      <li><b>Esc</b> — release mouse</li>
+    </ul>
+    <button id="playbtn">Step Outside</button>
+    <p class="hint">click anywhere to capture the mouse</p>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div class="crosshair"></div>
+  <div class="prompt" id="prompt"></div>
+  <div class="stance" id="stance">standing</div>
+  <div class="compass" id="compass">N</div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
