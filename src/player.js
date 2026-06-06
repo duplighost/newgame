@@ -1,82 +1,62 @@
-// First-person player controller with smooth motion, sprint, jump,
-// and a crouch/crawl mechanic.  Collision is AABB-based against
-// solid boxes provided by the world.
+// First-person controller: smooth motion, sprint, jump, crouch/crawl,
+// head-bob, AABB collision with sliding, and step-up "mantling" so the
+// player can climb through windowsills and onto low objects.
+//
+// Colliders are supplied each frame by the chunk manager as records of
+// { box: THREE.Box3, enabled?: bool }.  Disabled colliders (an open door
+// or window) are ignored.
 
 import * as THREE from "three";
 
-const STAND_EYE = 1.65;
-const CROUCH_EYE = 0.55;
-const PLAYER_RADIUS = 0.32;
-const STAND_HEIGHT = 1.85;
-const CROUCH_HEIGHT = 0.85;
+const STAND_EYE = 1.62;
+const CROUCH_EYE = 0.6;
+const RADIUS = 0.3;
+const STAND_H = 1.8;
+const CROUCH_H = 0.9;
 
 const WALK = 4.2;
-const SPRINT = 7.6;
-const CROUCH_SPEED = 1.7;
-const ACCEL = 60;
-const DAMP = 11;
-const AIR_DAMP = 1.2;
-const GRAVITY = -28;
-const JUMP_VEL = 8.0;
-
-const MOUSE_SENS = 0.0022;
+const SPRINT = 7.4;
+const CROUCH_SPEED = 1.8;
+const GRAVITY = -26;
+const JUMP_VEL = 7.6;
+const STEP_MAX = 1.15; // how high you can mantle
 
 export class Player {
-  constructor(camera, domElement) {
+  constructor(camera, dom) {
     this.camera = camera;
-    this.dom = domElement;
-
-    // body position is at feet
-    this.position = new THREE.Vector3(0, 0, 12);
+    this.dom = dom;
+    this.position = new THREE.Vector3(0, 0, 0);
     this.velocity = new THREE.Vector3();
     this.onGround = false;
-
-    // yaw / pitch
     this.yaw = 0;
     this.pitch = 0;
-
-    // stance
     this.crouching = false;
     this.eye = STAND_EYE;
-    this.targetEye = STAND_EYE;
-    this.height = STAND_HEIGHT;
-
-    // head bob
+    this.height = STAND_H;
     this.bob = 0;
-
-    // input
     this.keys = {};
     this.locked = false;
-
-    // collision colliders provided externally
     this.solids = [];
-
-    this._tmp = new THREE.Vector3();
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
-
-    this._bindEvents();
+    this._bind();
   }
 
   setSolids(arr) {
     this.solids = arr;
   }
 
-  _bindEvents() {
-    const onMouseMove = (e) => {
+  _bind() {
+    document.addEventListener("mousemove", (e) => {
       if (!this.locked) return;
-      this.yaw -= e.movementX * MOUSE_SENS;
-      this.pitch -= e.movementY * MOUSE_SENS;
+      this.yaw -= e.movementX * 0.0022;
+      this.pitch -= e.movementY * 0.0022;
       const lim = Math.PI / 2 - 0.02;
-      if (this.pitch > lim) this.pitch = lim;
-      if (this.pitch < -lim) this.pitch = -lim;
-    };
-    document.addEventListener("mousemove", onMouseMove);
-
+      this.pitch = Math.max(-lim, Math.min(lim, this.pitch));
+    });
     document.addEventListener("pointerlockchange", () => {
       this.locked = document.pointerLockElement === this.dom;
     });
-
     document.addEventListener("keydown", (e) => {
       this.keys[e.code] = true;
       if (e.code === "Space") e.preventDefault();
@@ -87,202 +67,196 @@ export class Player {
   }
 
   requestLock() {
-    if (this.dom.requestPointerLock) this.dom.requestPointerLock();
+    this.dom.requestPointerLock?.();
   }
 
   isMoving() {
-    return (
-      this.keys["KeyW"] ||
-      this.keys["KeyA"] ||
-      this.keys["KeyS"] ||
-      this.keys["KeyD"]
-    );
+    return this.keys.KeyW || this.keys.KeyA || this.keys.KeyS || this.keys.KeyD;
   }
 
   stance() {
     if (this.crouching) return "crouching";
-    if (this.keys["ShiftLeft"] || this.keys["ShiftRight"]) {
-      if (this.isMoving()) return "sprinting";
-    }
+    if ((this.keys.ShiftLeft || this.keys.ShiftRight) && this.isMoving()) return "sprinting";
     return this.isMoving() ? "walking" : "standing";
   }
 
+  lookDir(out) {
+    out.set(0, 0, -1).applyEuler(new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"));
+    return out;
+  }
+
   update(dt) {
-    // crouch toggle: hold C or Ctrl
-    const wantCrouch =
-      this.keys["KeyC"] || this.keys["ControlLeft"] || this.keys["ControlRight"];
-    this.crouching = wantCrouch;
-    this.targetEye = wantCrouch ? CROUCH_EYE : STAND_EYE;
-    this.height = wantCrouch ? CROUCH_HEIGHT : STAND_HEIGHT;
+    const p = this.position;
 
-    // smooth eye-height
-    this.eye += (this.targetEye - this.eye) * Math.min(1, dt * 14);
+    // ---- stance (with headroom check before standing) ----
+    const wantCrouch = this.keys.KeyC || this.keys.ControlLeft || this.keys.ControlRight;
+    if (wantCrouch) {
+      this.crouching = true;
+    } else if (this.crouching) {
+      // only stand if there's room
+      if (!this._column(p.x, p.z, p.y, STAND_H)) this.crouching = false;
+    }
+    this.height = this.crouching ? CROUCH_H : STAND_H;
+    const targetEye = this.crouching ? CROUCH_EYE : STAND_EYE;
+    this.eye += (targetEye - this.eye) * Math.min(1, dt * 14);
 
-    // forward / right based on yaw only (XZ plane)
+    // ---- desired horizontal velocity ----
     const sy = Math.sin(this.yaw),
       cy = Math.cos(this.yaw);
     this._fwd.set(-sy, 0, -cy);
     this._right.set(cy, 0, -sy);
-
-    // wish dir
     let wx = 0,
       wz = 0;
-    if (this.keys["KeyW"]) {
-      wx += this._fwd.x;
-      wz += this._fwd.z;
-    }
-    if (this.keys["KeyS"]) {
-      wx -= this._fwd.x;
-      wz -= this._fwd.z;
-    }
-    if (this.keys["KeyD"]) {
-      wx += this._right.x;
-      wz += this._right.z;
-    }
-    if (this.keys["KeyA"]) {
-      wx -= this._right.x;
-      wz -= this._right.z;
-    }
-    const wlen = Math.hypot(wx, wz);
-    if (wlen > 0) {
-      wx /= wlen;
-      wz /= wlen;
-    }
+    if (this.keys.KeyW) (wx += this._fwd.x), (wz += this._fwd.z);
+    if (this.keys.KeyS) (wx -= this._fwd.x), (wz -= this._fwd.z);
+    if (this.keys.KeyD) (wx += this._right.x), (wz += this._right.z);
+    if (this.keys.KeyA) (wx -= this._right.x), (wz -= this._right.z);
+    const wl = Math.hypot(wx, wz);
+    if (wl > 0) (wx /= wl), (wz /= wl);
 
-    const sprinting =
-      (this.keys["ShiftLeft"] || this.keys["ShiftRight"]) && !this.crouching;
-    const targetSpeed = this.crouching
-      ? CROUCH_SPEED
-      : sprinting
-      ? SPRINT
-      : WALK;
+    const sprinting = (this.keys.ShiftLeft || this.keys.ShiftRight) && !this.crouching;
+    const speed = this.crouching ? CROUCH_SPEED : sprinting ? SPRINT : WALK;
+    const tvx = wx * speed,
+      tvz = wz * speed;
+    const accel = this.onGround ? 12 : 4;
+    this.velocity.x += (tvx - this.velocity.x) * Math.min(1, dt * accel);
+    this.velocity.z += (tvz - this.velocity.z) * Math.min(1, dt * accel);
 
-    // accelerate toward target horizontal velocity
-    const targetVx = wx * targetSpeed;
-    const targetVz = wz * targetSpeed;
-
-    const accel = this.onGround ? ACCEL : ACCEL * 0.3;
-    this.velocity.x += (targetVx - this.velocity.x) * Math.min(1, dt * accel * 0.1);
-    this.velocity.z += (targetVz - this.velocity.z) * Math.min(1, dt * accel * 0.1);
-
-    // damping when no input
-    if (wlen === 0) {
-      const d = this.onGround ? DAMP : AIR_DAMP;
-      const factor = Math.max(0, 1 - d * dt);
-      this.velocity.x *= factor;
-      this.velocity.z *= factor;
-    }
-
-    // jump
-    if (this.keys["Space"] && this.onGround && !this.crouching) {
+    if (this.keys.Space && this.onGround && !this.crouching) {
       this.velocity.y = JUMP_VEL;
       this.onGround = false;
     }
-
-    // gravity
     this.velocity.y += GRAVITY * dt;
 
-    // ---- integrate with collision (axis-separated) ----
-    this._moveAxis(0, this.velocity.x * dt);
-    this._moveAxis(2, this.velocity.z * dt);
-    this._moveAxis(1, this.velocity.y * dt);
+    // ---- horizontal move with sliding + step-up ----
+    const sx = p.x,
+      sz = p.z,
+      syy = p.y;
+    const dx = this.velocity.x * dt,
+      dz = this.velocity.z * dt;
+    this._moveX(dx);
+    this._moveZ(dz);
 
-    // ground floor
-    if (this.position.y <= 0) {
-      this.position.y = 0;
+    const wanted = Math.hypot(dx, dz);
+    const moved = Math.hypot(p.x - sx, p.z - sz);
+    if (this.onGround && wanted > 1e-4 && moved < wanted * 0.72) {
+      // blocked — attempt to mantle up onto the obstacle
+      for (const step of [0.35, 0.7, STEP_MAX]) {
+        p.x = sx;
+        p.z = sz;
+        p.y = syy + step;
+        if (this._column(p.x, p.z, p.y, this.height)) continue; // no room at raised feet
+        this._moveX(dx);
+        this._moveZ(dz);
+        const moved2 = Math.hypot(p.x - sx, p.z - sz);
+        if (moved2 > moved + 0.03 && !this._column(p.x, p.z, p.y, this.height)) {
+          this.velocity.y = Math.max(this.velocity.y, 0);
+          this.onGround = false;
+          break;
+        }
+        p.x = sx;
+        p.z = sz;
+        p.y = syy;
+      }
+    }
+
+    // ---- vertical move ----
+    this._moveY(this.velocity.y * dt);
+    if (p.y <= 0) {
+      p.y = 0;
       if (this.velocity.y < 0) this.velocity.y = 0;
       this.onGround = true;
     }
 
-    // ---- head bob ----
-    const moving = (Math.abs(this.velocity.x) + Math.abs(this.velocity.z)) > 0.5;
-    const targetBobFreq = sprinting ? 12 : this.crouching ? 5 : 8;
-    if (moving && this.onGround) {
-      this.bob += dt * targetBobFreq;
-    } else {
-      this.bob *= 1 - Math.min(1, dt * 6);
-    }
-    const bobAmt = this.crouching ? 0.015 : sprinting ? 0.06 : 0.035;
-    const bobY = Math.sin(this.bob) * bobAmt;
-    const bobX = Math.cos(this.bob * 0.5) * bobAmt * 0.5;
+    // ---- head bob + camera ----
+    const moving = Math.hypot(this.velocity.x, this.velocity.z) > 0.6 && this.onGround;
+    const freq = sprinting ? 12 : this.crouching ? 6 : 8.5;
+    if (moving) this.bob += dt * freq;
+    else this.bob *= 1 - Math.min(1, dt * 6);
+    const amp = this.crouching ? 0.018 : sprinting ? 0.06 : 0.034;
+    const bobY = Math.sin(this.bob) * amp;
+    const bobX = Math.cos(this.bob * 0.5) * amp * 0.6;
 
-    // ---- update camera ----
-    this.camera.position.set(
-      this.position.x + bobX,
-      this.position.y + this.eye + bobY,
-      this.position.z
-    );
-    const q = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(this.pitch, this.yaw, 0, "YXZ")
-    );
-    this.camera.quaternion.copy(q);
+    this.camera.position.set(p.x + bobX, p.y + this.eye + bobY, p.z);
+    this.camera.quaternion.setFromEuler(new THREE.Euler(this.pitch, this.yaw, 0, "YXZ"));
   }
 
-  _moveAxis(axis, delta) {
-    if (delta === 0) return;
-    const p = this.position;
-    const old =
-      axis === 0 ? p.x : axis === 1 ? p.y : p.z;
-    const next = old + delta;
-
-    // candidate AABB
-    const min = new THREE.Vector3(
-      p.x - PLAYER_RADIUS,
-      p.y,
-      p.z - PLAYER_RADIUS
-    );
-    const max = new THREE.Vector3(
-      p.x + PLAYER_RADIUS,
-      p.y + this.height,
-      p.z + PLAYER_RADIUS
-    );
-    if (axis === 0) {
-      min.x = Math.min(p.x, next) - PLAYER_RADIUS;
-      max.x = Math.max(p.x, next) + PLAYER_RADIUS;
-    } else if (axis === 1) {
-      min.y = Math.min(p.y, next);
-      max.y = Math.max(p.y, next) + this.height;
-    } else {
-      min.z = Math.min(p.z, next) - PLAYER_RADIUS;
-      max.z = Math.max(p.z, next) + PLAYER_RADIUS;
-    }
-
-    // we'll move freely along this axis then resolve
-    if (axis === 0) p.x = next;
-    else if (axis === 1) p.y = next;
-    else p.z = next;
-
+  // does the player's column overlap any enabled solid?
+  _column(x, z, feetY, h) {
+    const minx = x - RADIUS,
+      maxx = x + RADIUS,
+      minz = z - RADIUS,
+      maxz = z + RADIUS;
+    const miny = feetY + 0.02,
+      maxy = feetY + h;
     for (const s of this.solids) {
-      if (!s.aabb) continue;
-      // current player AABB
-      const pMin = new THREE.Vector3(
-        p.x - PLAYER_RADIUS,
-        p.y,
-        p.z - PLAYER_RADIUS
-      );
-      const pMax = new THREE.Vector3(
-        p.x + PLAYER_RADIUS,
-        p.y + this.height,
-        p.z + PLAYER_RADIUS
-      );
+      if (s.enabled === false || !s.box) continue;
+      const a = s.box;
+      if (minx < a.max.x && maxx > a.min.x && miny < a.max.y && maxy > a.min.y && minz < a.max.z && maxz > a.min.z)
+        return true;
+    }
+    return false;
+  }
 
-      const a = s.aabb;
-      const overlap =
-        pMin.x < a.max.x &&
-        pMax.x > a.min.x &&
-        pMin.y < a.max.y &&
-        pMax.y > a.min.y &&
-        pMin.z < a.max.z &&
-        pMax.z > a.min.z;
-      if (!overlap) continue;
-
-      // resolve along the moving axis
-      if (axis === 0) {
-        if (delta > 0) p.x = a.min.x - PLAYER_RADIUS - 0.001;
-        else p.x = a.max.x + PLAYER_RADIUS + 0.001;
+  _moveX(d) {
+    if (d === 0) return;
+    const p = this.position;
+    p.x += d;
+    for (const s of this.solids) {
+      if (s.enabled === false || !s.box) continue;
+      const a = s.box;
+      if (
+        p.x - RADIUS < a.max.x &&
+        p.x + RADIUS > a.min.x &&
+        p.y + 0.02 < a.max.y &&
+        p.y + this.height > a.min.y &&
+        p.z - RADIUS < a.max.z &&
+        p.z + RADIUS > a.min.z
+      ) {
+        p.x = d > 0 ? a.min.x - RADIUS - 0.001 : a.max.x + RADIUS + 0.001;
         this.velocity.x = 0;
-      } else if (axis === 1) {
-        if (delta > 0) {
+      }
+    }
+  }
+
+  _moveZ(d) {
+    if (d === 0) return;
+    const p = this.position;
+    p.z += d;
+    for (const s of this.solids) {
+      if (s.enabled === false || !s.box) continue;
+      const a = s.box;
+      if (
+        p.x - RADIUS < a.max.x &&
+        p.x + RADIUS > a.min.x &&
+        p.y + 0.02 < a.max.y &&
+        p.y + this.height > a.min.y &&
+        p.z - RADIUS < a.max.z &&
+        p.z + RADIUS > a.min.z
+      ) {
+        p.z = d > 0 ? a.min.z - RADIUS - 0.001 : a.max.z + RADIUS + 0.001;
+        this.velocity.z = 0;
+      }
+    }
+  }
+
+  _moveY(d) {
+    if (d === 0) return;
+    const p = this.position;
+    p.y += d;
+    this.onGround = false;
+    for (const s of this.solids) {
+      if (s.enabled === false || !s.box) continue;
+      const a = s.box;
+      if (
+        p.x - RADIUS < a.max.x &&
+        p.x + RADIUS > a.min.x &&
+        p.z - RADIUS < a.max.z &&
+        p.z + RADIUS > a.min.z &&
+        p.y < a.max.y &&
+        p.y + this.height > a.min.y
+      ) {
+        if (d > 0) {
           p.y = a.min.y - this.height - 0.001;
           this.velocity.y = 0;
         } else {
@@ -290,16 +264,7 @@ export class Player {
           this.velocity.y = 0;
           this.onGround = true;
         }
-      } else {
-        if (delta > 0) p.z = a.min.z - PLAYER_RADIUS - 0.001;
-        else p.z = a.max.z + PLAYER_RADIUS + 0.001;
-        this.velocity.z = 0;
       }
-    }
-
-    if (axis === 1 && delta < 0 && !this.onGround) {
-      // not resolved by collision; on ground only if at y==0
-      if (p.y > 0.001) this.onGround = false;
     }
   }
 }
