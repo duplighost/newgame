@@ -43,21 +43,25 @@ const GradeShader = {
   `,
 };
 
-export function createComposer(renderer, scene, camera) {
+export function createComposer(renderer, scene, camera, settings = {}) {
+  const { bloom = true, smaa = true } = settings;
   const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+  composer.setPixelRatio(renderer.getPixelRatio());
 
   composer.addPass(new RenderPass(scene, camera));
 
   const size = renderer.getSize(new THREE.Vector2());
-  const bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.32, 0.7, 1.15);
-  composer.addPass(bloom);
+  let bloomPass = null;
+  if (bloom) {
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.32, 0.7, 1.15);
+    composer.addPass(bloomPass);
+  }
 
   const grade = new ShaderPass(GradeShader);
   composer.addPass(grade);
 
-  composer.addPass(new SMAAPass(size.x, size.y));
+  if (smaa) composer.addPass(new SMAAPass(size.x, size.y));
   composer.addPass(new OutputPass());
 
-  return { composer, bloom, grade };
+  return { composer, bloom: bloomPass, grade };
 }

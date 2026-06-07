@@ -15,8 +15,6 @@ import * as P from "./props.js";
 export const CHUNK = 46;
 const ROAD = 9;
 const BLOCK = CHUNK - ROAD; // inner buildable square side
-const LOAD_R = 3;
-const DETAIL_R = 1;
 
 const _box = new THREE.Box3();
 function worldAABB(obj) {
@@ -26,9 +24,11 @@ function worldAABB(obj) {
 }
 
 export class ChunkManager {
-  constructor(scene, mats) {
+  constructor(scene, mats, opts = {}) {
     this.scene = scene;
     this.mats = mats;
+    this.loadR = opts.loadR ?? 3;
+    this.detailR = opts.detailR ?? 1;
     this.chunks = new Map(); // key -> chunk
     this.curKey = null;
     this._tmp = new THREE.Vector3();
@@ -47,11 +47,11 @@ export class ChunkManager {
 
     // desired set
     const want = new Map();
-    for (let dx = -LOAD_R; dx <= LOAD_R; dx++) {
-      for (let dz = -LOAD_R; dz <= LOAD_R; dz++) {
+    for (let dx = -this.loadR; dx <= this.loadR; dx++) {
+      for (let dz = -this.loadR; dz <= this.loadR; dz++) {
         const cx = pcx + dx,
           cz = pcz + dz;
-        const detail = Math.abs(dx) <= DETAIL_R && Math.abs(dz) <= DETAIL_R;
+        const detail = Math.abs(dx) <= this.detailR && Math.abs(dz) <= this.detailR;
         want.set(this.key(cx, cz), { cx, cz, detail });
       }
     }
@@ -110,8 +110,8 @@ export class ChunkManager {
     const interact = [];
     const windows = [];
     const lights = [];
-    for (let dx = -DETAIL_R; dx <= DETAIL_R; dx++)
-      for (let dz = -DETAIL_R; dz <= DETAIL_R; dz++) {
+    for (let dx = -this.detailR; dx <= this.detailR; dx++)
+      for (let dz = -this.detailR; dz <= this.detailR; dz++) {
         const ch = this.chunks.get(this.key(pcx + dx, pcz + dz));
         if (!ch) continue;
         for (const it of ch.interactables) interact.push(it);

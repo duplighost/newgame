@@ -36,6 +36,7 @@ export class Player {
     this.bob = 0;
     this.keys = {};
     this.locked = false;
+    this.moveVec = { x: 0, y: 0 }; // analog input (touch): x=strafe, y=forward
     this.solids = [];
     this._fwd = new THREE.Vector3();
     this._right = new THREE.Vector3();
@@ -71,7 +72,14 @@ export class Player {
   }
 
   isMoving() {
-    return this.keys.KeyW || this.keys.KeyA || this.keys.KeyS || this.keys.KeyD;
+    return (
+      this.keys.KeyW ||
+      this.keys.KeyA ||
+      this.keys.KeyS ||
+      this.keys.KeyD ||
+      Math.abs(this.moveVec.x) > 0.1 ||
+      Math.abs(this.moveVec.y) > 0.1
+    );
   }
 
   stance() {
@@ -111,8 +119,11 @@ export class Player {
     if (this.keys.KeyS) (wx -= this._fwd.x), (wz -= this._fwd.z);
     if (this.keys.KeyD) (wx += this._right.x), (wz += this._right.z);
     if (this.keys.KeyA) (wx -= this._right.x), (wz -= this._right.z);
+    // analog stick (touch)
+    wx += this._fwd.x * this.moveVec.y + this._right.x * this.moveVec.x;
+    wz += this._fwd.z * this.moveVec.y + this._right.z * this.moveVec.x;
     const wl = Math.hypot(wx, wz);
-    if (wl > 0) (wx /= wl), (wz /= wl);
+    if (wl > 1) (wx /= wl), (wz /= wl); // allow analog magnitudes < 1 (slow walk)
 
     const sprinting = (this.keys.ShiftLeft || this.keys.ShiftRight) && !this.crouching;
     const speed = this.crouching ? CROUCH_SPEED : sprinting ? SPRINT : WALK;

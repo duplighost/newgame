@@ -5,7 +5,8 @@
 import * as THREE from "three";
 import { Sky } from "three/addons/objects/Sky.js";
 
-export function createScene(renderer) {
+export function createScene(renderer, settings = {}) {
+  const { shadows = true, shadowMap = 2048, fog = 0.0072 } = settings;
   const scene = new THREE.Scene();
 
   // ---- sky ----
@@ -28,12 +29,12 @@ export function createScene(renderer) {
   u.sunPosition.value.copy(sun);
 
   // ---- fog (warm, hides chunk streaming at the edges) ----
-  scene.fog = new THREE.FogExp2(0xeab27a, 0.0072);
+  scene.fog = new THREE.FogExp2(0xeab27a, fog);
 
   // ---- sun light ----
   const sunLight = new THREE.DirectionalLight(0xffd49a, 2.6);
-  sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.castShadow = shadows;
+  sunLight.shadow.mapSize.set(shadowMap, shadowMap);
   const s = 46;
   sunLight.shadow.camera.left = -s;
   sunLight.shadow.camera.right = s;

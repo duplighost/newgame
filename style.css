@@ -214,3 +214,151 @@ canvas#canvas {
   color: var(--warm);
   text-shadow: 0 1px 4px rgba(0,0,0,0.7);
 }
+
+/* ---------- Quality selector (start card) ---------- */
+.touch-controls {
+  display: none;
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--paper-dim);
+}
+.touch-controls b { color: var(--warm); font-weight: 600; }
+.quality {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 22px;
+}
+.quality-label {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(244, 237, 224, 0.5);
+  margin-right: 4px;
+}
+.quality button {
+  appearance: none; -webkit-appearance: none;
+  padding: 7px 14px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(245, 201, 138, 0.25);
+  border-radius: 3px;
+  color: var(--paper);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.quality button:hover { border-color: rgba(245, 201, 138, 0.6); }
+.quality button.on {
+  background: linear-gradient(180deg, var(--warmer), #c5781f);
+  border-color: var(--warmer);
+  color: #1d1208;
+  font-weight: 600;
+}
+
+/* Touch devices: show the touch hint, hide mouse hint */
+@media (hover: none) and (pointer: coarse) {
+  .touch-controls { display: block; }
+  .card .hint { display: none; }
+  .card ul.controls { display: none; }
+}
+
+/* ---------- On-screen touch controls ---------- */
+#touch {
+  position: fixed; inset: 0;
+  z-index: 35;
+  display: none;
+  pointer-events: none;
+}
+#touch.on { display: block; }
+
+.tc-look {
+  position: absolute; inset: 0;
+  z-index: 1;
+  pointer-events: auto;
+  touch-action: none;
+}
+.tc-stick {
+  position: absolute;
+  left: max(22px, env(safe-area-inset-left));
+  bottom: max(26px, env(safe-area-inset-bottom));
+  width: 132px; height: 132px;
+  z-index: 3;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+  border: 1px solid rgba(245, 201, 138, 0.28);
+  pointer-events: auto;
+  touch-action: none;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+}
+.tc-knob {
+  width: 58px; height: 58px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 40% 35%, rgba(246,201,138,0.9), rgba(197,120,31,0.85));
+  box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  will-change: transform;
+}
+.tc-buttons {
+  position: absolute;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(28px, env(safe-area-inset-bottom));
+  z-index: 3;
+  display: flex; flex-direction: column-reverse; gap: 12px;
+  pointer-events: none;
+}
+.tc-btn {
+  pointer-events: auto;
+  touch-action: none;
+  width: 84px; height: 56px;
+  border-radius: 14px;
+  border: 1px solid rgba(245, 201, 138, 0.3);
+  background: rgba(20,16,14,0.5);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: var(--paper);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.12em;
+  -webkit-user-select: none; user-select: none;
+}
+.tc-btn.tc-jump {
+  width: 92px; height: 72px;
+  border-radius: 50%;
+  font-size: 13px;
+}
+.tc-btn.on {
+  background: linear-gradient(180deg, rgba(245,158,58,0.9), rgba(197,120,31,0.9));
+  color: #1d1208;
+  border-color: var(--warmer);
+}
+.tc-interact {
+  position: absolute;
+  left: 50%; bottom: 30%;
+  transform: translateX(-50%) scale(0.9);
+  z-index: 3;
+  pointer-events: auto;
+  touch-action: none;
+  display: none;
+  align-items: center; gap: 10px;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--warm);
+  background: rgba(20,16,14,0.7);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  color: var(--warm);
+  font-size: 14px; letter-spacing: 0.1em;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  box-shadow: 0 0 24px rgba(245,158,58,0.35);
+}
+.tc-interact.show { display: inline-flex; opacity: 1; transform: translateX(-50%) scale(1); }
+.tc-interact .k {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 6px;
+  background: rgba(245,158,58,0.18);
+  border: 1px solid rgba(245,201,138,0.6);
+  font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+}
+
+/* prevent the page itself from scrolling/zooming under the controls */
+html, body { overscroll-behavior: none; touch-action: none; }
